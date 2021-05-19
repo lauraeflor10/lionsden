@@ -1,0 +1,284 @@
+---
+title: "Lion's Den Risk Modelling Challenge Preselection Task"
+author: "RiskTakers Team"
+date: "4/28/2021"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: show
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+## Team members:  
+1. Nahid Gulaliyev  
+2. Alberto Delgado Lopez  
+3. Tesfahun Tegene Boshe  
+4. Laura Erika Rozalia Florencia
+
+## Introduction
+
+Coal mining has several effects on the environment. Despite the fact that countries or companies get a huge amount of energy from coal, however, it has negative effects on the environment which can be considered as Chemical, Air and Dust Pollution. In addition, miners also can be toxicated from mining coals in quarries. As it is known from the information about miners, since 1994 a lot of miners have died from toxic fumes. To decrease negative effects of coal mining, Lion’s Republic decided to improve the natural environment of the country which means that several kinds of estimation analysis will be needed in order to get the result about the impacts of various indicators on environment change.
+
+### Background Information  
+
+Coal is used to produce electricity and according to the postulate of diminishing marginal productivity, as more and more coal is used to produce electricity, the marginal contribution of coal in terms of kwh will tend to decrease. If the price is lowered to compensate for the decline in productivity, it will determine the demand (values) for a factor of production.  
+
+In the other way, improvement of coal consumption is also important in solving the problem of energy security and environmental pollution and its the base of climate change. The improvement of existing plants could potentially bring the large reductions of CO2 emissions.  Regarding economy, coal economic efficiency is found to be greater than environmental efficiency, and it indicates that the benefit of efficiency masked the negative effect of the environmental impact. Lion’s Republic should take into account the clean utilization of coal and it results from the effect of technical/ technological efficiency and scale/ value efficiency thus reducing the amount of CO2 emitted.  
+
+As the technology improvement at the moment majority of coal mining countries or companies use advanced technology. The invention of electric hydraulic drilling rigs, which replaced pneumatic rigs in open and underground mines has decreased the workload and the number of employees. As a result, the number of toxicated employees and also population decreased. Furthermore, it decreased the Air, Chemical and Dust Pollution. In our time series analysis, we are going to analyse the trend over coal mining from the given historical period and will predict how it will be in 2021.  
+
+## Data Preparation
+### Install and load the necessary packages and data preparation
+```{r, echo=FALSE}
+
+requiredPackages = c("xlsx","psych","stats","ggpubr","forecast", "DataCombine","caret","tseries")
+
+for(i in requiredPackages){if(!require(i,character.only = TRUE)) install.packages(i)}
+for(i in requiredPackages){if(!require(i,character.only = TRUE)) library(i,character.only = TRUE)}
+
+setwd("D:\\0. DSBA - Warsaw Uni\\LionsDen")
+data <- read.xlsx("Lions_Den_data.xlsx", sheetIndex = 1)
+```  
+
+### Remove NA columns and rows 
+
+We start from cleaning the dataset, from removing 'NA' from the data
+```{r pressure, echo=FALSE}
+data <- data[,c(1,2)]
+colnames(data) <- c("date","consumption")
+data<-data[complete.cases(data),]
+
+```  
+
+ts() function from stats package changes a vector object into a time series witha defined frequency and start time. 
+```{r}
+data_ts <- ts(data[,2], frequency = 12, start = c(1994, 7))
+head(data_ts)
+ 
+```
+
+We plot every month into a separate box plot. The outlier points of every month are visible.
+
+```{r}
+boxplot(data_ts~cycle(data_ts)) 
+```
+
+## 1. Decomposition of time series into trend and seasonality
+
+Using stl() function from 'stats' package, we decompose into trend and seasonality the time series as follows:  
+
+```{r}
+data_ts %>%
+  stl(s.window=12, robust=TRUE) %>%
+  autoplot()
+```
+
+## 2. Outliers: 
+
+```{r}
+tsoutliers(data_ts) #find the outliers and the replacement
+cdata_ts <- tsclean(data_ts) # cleans the outliers
+
+```  
+
+Now that we have cleaned the outliers, another call of tsoutliers() shows no outliers. 
+```{r}
+tsoutliers(cdata_ts) # check if the clean data is really clean. 
+autoplot(stl(cdata_ts, s.window = 12,  robust=TRUE))
+```
+
+The decomposition of the series shows a better result now:
+```{r}
+data_ts %>%
+  stl(s.window=12, robust=TRUE) %>%
+  autoplot()
+```
+
+## 3. Stationarity
+
+Looking at the previous graph, we can see that the trend of data has a negative slope, i.e., it is not constant over time. Also, in the seasonal chart we notice that the variance of the data is neither constant over time, it decreases over time. These both behaviors are characteristics of Non-Stationary series.
+
+We will work with the logarithm of the data to stabilize the variance. Beforehand we will replace the zeros in our data with the means of neighbors. 
+
+```{r}
+cdata_ts[which(cdata_ts==0)] <- mean(c(cdata_ts[which(cdata_ts==0)-1],cdata_ts[which(cdata_ts==0)+1]))
+```
+> *The mean of values at indices 290 and 292 to replace to replace the zero at index 291 to able to do the logarthmic operations in the following stages.*
+
+```{r}
+ldata_ts <- log(cdata_ts)
+cbind("Consumption" = data_ts,
+      "Log Consumption"=ldata_ts) %>%
+  autoplot(facets=TRUE) + xlab("Year") + ylab("")
+autoplot(ldata_ts) + ylab("Consumption") + xlab("Year") + geom_smooth(method="lm", se=FALSE)
+
+```
+
+```{r}
+autoplot(stl(log(cdata_ts), s.window = 12,  robust=TRUE))
+autoplot(log(cdata_ts)) + ylab("Consumption") + xlab("Year") + geom_smooth(method="lm", se=FALSE)
+
+```  
+
+> *After cleaning and replacing of zero, we can see that our data seems more stationary compared to previous one. Eventhough we still have the issue of the negative trend.*
+
+In order to deal with the negative trend we must difference our data.Since the data are strongly seasonal, seasonal differencing will be used.
+
+```{r}
+nsdiffs(ldata_ts) #it tells us how many seasonal differencings are required
+```
+
+```{r}
+autoplot(diff(ldata_ts),lag=12) + ylab("Consumption") + xlab("Year") + geom_smooth(method="lm", se=FALSE)
+```
+
+```{r}
+ndiffs(diff(ldata_ts,lag=12)) #it tells us if any additional differencing is needed
+```
+
+```{r}
+adf.test(diff(ldata_ts,lag=12)) # p-value < 0.05 null hypothesis (Data NoSt) rejected -> the TS is stationary
+kpss.test(diff(ldata_ts,lag=12))# p-value > 0.05 null hypothesis (Data St) no rejected -> the TS is stationary
+```  
+
+> After this analysis we got to transform our data in a Stationary series, and we got to find our first parameters D=1 and d=0, which will be used when building our model.
+
+## 4. Autocorrelation Analysis
+```{r}
+ldata_ts %>% diff(lag=12) %>%
+  ggtsdisplay(xlab="Year",
+              main="Seasonal Differenced Consumption scripts")
+```
+Looking at the spikes in the ACF and PACF we can try to deduce the rest of the parameters: seasonal spikes suggest P=2 and Q=0, and the in the first season the spikes suggest p=4 and q=2.
+
+However, Auto SARIMA can indicate us the possible best parameters c(p,d,q) and c(P,D,Q)
+```{r}
+
+## Auto SARIMA Modelling
+auto.arima(ldata_ts,seasonal = T)
+```
+
+However, it is a good practice to check other combinations and compare for the lowest AICc.
+```{r, include=FALSE}
+# try multiple combinations of c(p,d,q) and c(P,D,Q). 
+
+(fit1 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(0,1,0)))
+(fit2 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(0,1,1)))
+(fit3 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(0,1,2)))
+(fit4 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(1,1,0)))
+(fit5 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(1,1,1)))
+(fit6 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(1,1,2)))
+(fit7 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(2,1,0)))
+(fit8 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(2,1,1)))
+(fit9 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(2,1,2)))
+```
+
+```{r}
+aic_values <- list(fit1 =fit1$aicc,fit2 =fit2$aicc,fit3 =fit3$aicc,fit4 =fit4$aicc,
+              fit5 =fit5$aicc,fit6 =fit6$aicc,fit7 =fit7$aicc,fit8 =fit8$aicc,fit9 =fit9$aicc)
+
+aic_values <- c(fit1$aicc,fit2$aicc,fit3$aicc,fit4$aicc,
+              fit5$aicc,fit6$aicc,fit7$aicc,fit8$aicc,fit9$aicc)
+
+best_model <- which(aic_values==min(aic_values)) # the model with smallest AIC is the best 
+best_model
+```  
+
+
+
+Using the AIC (information criteria), fit8 yields the best model. Here below we check the residuals of fit8. 
+```{r}
+checkresiduals(fit8) # plots the residuals
+```
+> Summing up, after defining SARIMA parameters manually, we also did Auto SARIMA and then did several fitting meausures in order to define the most appropriate parameters for the model and as a result we choose fit8 parameters which are p=3, d=0, q=2 and P=2, D=1, Q=1.
+> In order to see how well are the parameters which we chose we did check residuals and from the result it seems that our model is okey, because the residuals behave are not crossing the significance limit and show a white-noise behavior.
+
+## 5. Forecasting  
+
+For predicting 2021 before we went 80 months (around 7 years) back in our data in order to see how its prediction will be shown in the plot for the future 12 months. As in the plot below you can see that the predicted time 2014-2020 is almost the same with the data that is introduced. So then we predicted data for the future 12 months and got the result that it will decrease for a few months, then increase and will keep its trend.
+
+Function regressionMetrics() calculates some common metrics for model evaluation. 
+```{r}
+regressionMetrics <- function(real, predicted) {
+  MSE <- mean((real - predicted)^2) # Mean Squera Error
+  RMSE <- sqrt(MSE) # Root Mean Square Error
+  MAE <- mean(abs(real - predicted)) # Mean Absolute Error
+  MAPE <- mean(abs(real - predicted)/abs(real)) # Mean Absolute Percentage Error
+  MedAE <- median(abs(real - predicted)) # Median Absolute Error
+  TSS <- sum((real - mean(real))^2) # Total Sum of Squares
+  RSS <- sum((predicted - real)^2)  # Explained Sum of Squares
+  R2 <- 1 - RSS/TSS
+  
+  result <- data.frame(MSE, RMSE, MAE, MAPE, MedAE, R2)
+  return(result)
+}
+
+```
+
+## 6. Accuracy Measurement
+To be able to test the model, we divide the data to training set and test set at 75:25 ratio. 
+```{r}
+
+data_train <- ts(ldata_ts[1:round(length(ldata_ts)*0.75, 0)],frequency = 12, start = c(1994, 7))
+data_test <- ts(ldata_ts[-(1:round(length(ldata_ts)*0.75, 0))],frequency = 12, start = c(2014, 5))
+
+
+```
+
+The selected SARIMA model was trained on the train data and later the same model is used to predict the test data. 
+```{r}
+
+(fit8 <- Arima(data_train, order=c(3,0,2), seasonal=c(2,1,1))) # the chosen model from the tests above
+fit8 %>% forecast(h=80) %>% autoplot() #plot the forecasting
+
+pred <- predict(fit8, 80)$pred # predict 80 future months (25% of the time span in the data)
+regressionMetrics(data_test, pred) # call the regressionMetrics function. Satisfactory results!
+
+```
+> The R-Correlation of 70% is a good indicator, plus the MAPE=0.14 tells as that the accuracy of our model is around the 86%.
+
+```{r}
+data <- ts.union(exp(data_train), exp(pred))
+colnames(data) <- c("Actual","Forecasted")
+autoplot(data) + ylab("Coal comsumption")
+```
+
+```{r}
+data <- ts.union(exp(data_test), exp(pred))
+colnames(data) <- c("Actual","Forecasted")
+autoplot(data) + ylab("Coal comsumption")
+```
+
+## 7. Forecasting 2021 consumption
+The selected SARIMA model is trained on the given data and the resulting model is used to predict the future. 
+
+```{r}
+(fit8 <- Arima(ldata_ts, order=c(3,0,2), seasonal=c(2,1,1))) # train the model on the whole data
+fit8 %>% forecast(h=12) %>% autoplot()
+```
+
+
+```{r}
+pred <- exp((predict(fit8, 12)$pred)) # predict the 12 months of 2021
+data <- ts.union(exp(ldata_ts), pred)
+colnames(data) <- c("Actual","Forecasted for 2021")
+autoplot(data) + ylab("Coal comsumption")
+```
+
+```{r}
+View(pred)
+```
+> This is the predicted data for 2021.
+
+## 8. What other variables and models can improve the prediction? 
+We believe adding additional variables for example the estimated number of coal industries to be running will help us to predict the year 2021 better. SARIMAX is one of Such models considering another predefined variable. 
+
+## Conclusion
+We elaborate our model using metrics and we try to identify the nature of the phenomenon represented by the sequence of consumption observations, and we predict the future values of the time series variable. Regardless of the depth of our understanding and the validity of our interpretation (theory) of the phenomenon, we can extrapolate the identified pattern to predict future events, for year 2021. For such kind of data and their fluctuated trends, the above mentioned analysis and the way of coding will be helpful for making it clear and understandable, and can be done further analysis by business analysts in order to make decisions.
